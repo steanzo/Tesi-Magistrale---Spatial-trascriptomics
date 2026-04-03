@@ -1,8 +1,19 @@
-# Spatial-trascriptomics
+# Spatial-Trascriptomics
+Nel mio progetto di tesi ho sviluppato un modello statistico avanzato per analizzare dati di trascrittomica spaziale, una tecnologia che permette di studiare l’espressione genica preservando la posizione delle cellule all’interno del tessuto. Come riportato nel documento, “l’obiettivo di questo lavoro è sviluppare un modello statistico che affronti efficacemente sovradispersione e dipendenza spaziale nei dati omici”.
 
-Questo progetto è la raccolta dei codici utilizzati nel mio lavoro di tesi: "Analisi di dati omici con dipendenza spaziale: un modello binomiale negativo con campo gaussiano", presso l'università degli studi di Padova, per i corso amgistrale di scienze statistiche. Lo scopo è raccogliere, in maniera ordinata tutto il codice utilizzato.
+Per farlo ho integrato:
+- Distribuzione Binomiale Negativa per gestire la sovradispersione tipica dei dati RNA-seq.
+- Campo Gaussiano per modellare la correlazione tra spot vicini.
+- Approccio SPDE (Stochastic Partial Differential Equations) per stimare in modo efficiente il campo spaziale.
+- Inferenza Bayesiana tramite INLA, che ha permesso stime rapide e accurate anche su dataset complessi.
 
-# Spatial-transcriptomics
+Il modello è stato applicato a dati Visium (10x Genomics) provenienti da tessuto muscolare murino, integrati con informazioni da immagini di immunofluorescenza. L’obiettivo biologico era valutare l’effetto di un trattamento su geni coinvolti nella degradazione muscolare, come Trim63, Foxo1 e Foxo3. Come riportato nel testo, “il modello ha evidenziato effetti significativi del trattamento su 196 geni, principalmente legati a processi immunitari”, mentre i tre geni di interesse non hanno mostrato l’effetto atteso.
+
+Il lavoro ha permesso di:
+- costruire un pipeline completa di preprocessing, normalizzazione e integrazione immagine–RNA;
+- confrontare modelli spaziali alternativi (BN, Poisson, GMRF, SPDE);
+- evidenziare pattern spaziali di espressione e aree di sovra/sotto-espressione nei tessuti;
+- proporre miglioramenti futuri, come l’uso di prior spike-and-slab per aumentare la potenza nei test multipli.
 
 ## Descrizione
 Questo repository raccoglie esclusivamente i codici utilizzati nel mio lavoro di tesi: **"Analisi di dati omici con dipendenza spaziale: un modello binomiale negativo con campo gaussiano"**, svolto presso l'Università degli Studi di Padova, per il corso magistrale in Scienze Statistiche. L'obiettivo è organizzare e documentare in maniera ordinata tutto il codice implementato.
