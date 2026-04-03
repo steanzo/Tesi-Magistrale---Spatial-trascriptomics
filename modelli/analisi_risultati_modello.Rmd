@@ -1,0 +1,340 @@
+---
+title: "Analisi risultati modelli"
+author: "Stefano Anzoli"
+date: "2024-10-15"
+output: html_document
+---
+```{r setup, include=FALSE}
+# unilur::tutorial_html_solution
+knitr::opts_chunk$set(echo = FALSE, collapse = FALSE, warning = FALSE)
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+```
+
+
+# Modello BN
+
+Estraggo i geni diffrenzialmente espressi e conto quanti sono
+```{r}
+load("modelli/nb_model_completo.RData")
+GFP.sign <- sapply(nb.multi.SPDE, function(x){
+  sign(x$parametri["logGFP", "0.025quant"]) == sign(x$parametri["logGFP", "0.975quant"])
+  })
+
+table(GFP.sign)
+
+
+geni.GFP.sign <- names(GFP.sign[GFP.sign==T])
+
+
+coef.GFP.sign <- lapply(nb.multi.SPDE[geni.GFP.sign], function(x){
+  x$parametri["logGFP", c("mean", "0.025quant", "0.975quant")]
+  })
+
+coef.GFP.sign <- do.call(rbind, coef.GFP.sign) 
+```
+
+
+Quali sono influenzati positivamente dal trattamento
+```{r}
+coef.GFP.sign %>% filter(sign(mean) == 1) %>% arrange(desc(mean))
+```
+
+Quali sono influenzati negativamente dal trattamento
+
+```{r}
+coef.GFP.sign %>% filter(!sign(mean) == 1) %>% arrange(mean)
+```
+
+
+
+# Modello Poisson 
+
+Numero geni con tratamento significativo
+```{r}
+load("modelli/p_model_completo.RData")
+GFP.sign.P <- sapply(p.multi.SPDE, function(x){
+  sign(x$parametri["logGFP", "0.025quant"]) == sign(x$parametri["logGFP", "0.975quant"])
+  })
+
+table(GFP.sign.P)
+
+
+geni.GFP.sign.P <- names(GFP.sign.P[GFP.sign.P==T])
+
+
+coef.GFP.sign.P <- lapply(p.multi.SPDE[geni.GFP.sign.P], function(x){
+  x$parametri["logGFP", c("mean", "0.025quant", "0.975quant")]
+  })
+
+coef.GFP.sign.P <- do.call(rbind, coef.GFP.sign.P) 
+```
+
+Quali sono influenzati positivamente dal trattamento
+```{r}
+coef.GFP.sign.P %>% filter(sign(mean) == 1) %>% arrange(desc(mean))
+```
+
+Quali sono influenzati negativamente dal trattamento
+
+```{r}
+coef.GFP.sign.P %>% filter(!sign(mean) == 1) %>% arrange(mean)
+```
+
+
+# Confronto risultati metodi
+
+Quali sono solo singificativi per il modello BN:
+
+```{r}
+solo.NB <- rownames(coef.GFP.sign)[!rownames(coef.GFP.sign) %in% rownames(coef.GFP.sign.P)]
+solo.NB
+```
+
+Quali sono solo singificativi per il modello Poisson:
+```{r}
+solo.P <- rownames(coef.GFP.sign.P)[!rownames(coef.GFP.sign.P) %in% rownames(coef.GFP.sign)]
+solo.NB
+```
+
+
+
+Quali hanno effetti differenti nei due modelli 
+```{r}
+condivisi <- rownames(coef.GFP.sign)[rownames(coef.GFP.sign) %in% rownames(coef.GFP.sign.P)]
+table(!sign(coef.GFP.sign[condivisi, "mean"]) == sign(coef.GFP.sign.P[condivisi, "mean"]))
+```
+
+Nessuno ha segni differenti
+
+
+
+
+
+
+# Analisi iperfparametri
+
+```{r}
+iper <- sapply(nb.multi.SPDE, function(x){
+  x$iperparametri["Precision for id_tissue" ,"mean"]
+  })
+ggplot()+
+  geom_boxplot(aes(y = iper))
+
+summary(iper)
+
+```
+
+
+
+```{r}
+iper.max <- sapply(nb.multi.SPDE, function(x){
+  x$iperparametri["Precision for id_tissue" ,"0.975quant"]
+  })
+iper.min <- sapply(nb.multi.SPDE, function(x){
+  x$iperparametri["Precision for id_tissue" ,"0.025quant"]
+  })
+
+summary(iper.max-iper.min)
+
+
+
+
+nb.multi.SPDE$Trim63$iperparametri
+```
+
+```{r}
+spaziale <- sapply(nb.multi.SPDE, function(x){
+  x$iperparam
+  tau <- exp(x$iperparametri["Theta1 for w", "mean"])
+  kappa <-  exp(x$iperparametri["Theta2 for w", "mean"])
+  risp <- c(tau, kappa)
+  names(risp) <- c("tau", "kappa")
+  risp
+}) %>% t()
+
+```
+
+```{r}
+tau_plot <- ggplot(data.frame(Value = spaziale[,1 ]), aes(x = Value)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  labs(x = "Value",
+       y = "Density") +
+  theme_minimal()
+
+# Grafico per kappa
+kappa_plot <- ggplot(data.frame(Value = spaziale[, 2]), aes(x = Value)) +
+  geom_density(fill = "red", alpha = 0.5) +
+  labs(x = "Value",
+       y = "Density") +
+  theme_minimal()
+
+```
+
+```{r}
+kappa_plot
+tau_plot
+```
+
+
+
+```{r}
+spaziale.int <- sapply(nb.multi.SPDE, function(x){
+  x$iperparam
+  tau <- exp(x$iperparametri["Theta1 for w", "0.975quant"]) - exp(x$iperparametri["Theta1 for w", "0.025quant"])
+  kappa <-  exp(x$iperparametri["Theta2 for w", "0.975quant"]) - exp(x$iperparametri["Theta2 for w", "0.025quant"])
+  risp <- c(tau, kappa)
+  names(risp) <- c("tau", "kappa")
+  risp
+}) %>% t()
+
+```
+
+```{r}
+boxplot(spaziale.int[,1])
+boxplot(spaziale.int[,2])
+
+```
+
+
+
+```{r}
+geni.analizzati <- names(nb.multi.SPDE)
+tot.expr <- colSums(data.gene[,geni.analizzati])
+names(sort(tot.expr)[1:100])
+
+spaziale <- sapply(nb.multi.SPDE[names(sort(tot.expr)[1:100])], function(x){
+  x$iperparam
+  tau <- exp(x$iperparametri["Theta1 for w", "mean"])
+  kappa <-  exp(x$iperparametri["Theta2 for w", "mean"])
+  risp <- c(tau, kappa)
+  names(risp) <- c("tau", "kappa")
+  risp
+}) %>% t()
+
+
+
+```
+```{r}
+spaziale["Thbs1",]
+
+
+
+var(data.gene$Thbs1)
+
+
+1/(4*pi*spaziale["Thbs1",2]^2*spaziale["Thbs1",1]*2)
+
+sqrt(8)/spaziale["Thbs1",2]
+
+
+
+
+```
+
+```{r}
+rho <- sapply(nb.multi.SPDE, function(x){
+  k <- exp(x$iperparametri["Theta2 for w", "mean"])
+  sqrt(8)/k
+})
+boxplot(rho)
+```
+
+```{r}
+ggplot() + 
+  geom_density(aes(x = rho)) +
+  theme_bw()
+```
+
+```{r}
+coords <- data[,c("X1", "Y1", "id_tissue")]
+for (el in unique(coords$id_tissue)){
+  x_1 <- mean(coords[coords$id_tissue == el, "X1"])
+  y_1 <- mean(coords[coords$id_tissue == el, "Y1"])
+  coords[coords$id_tissue == el, "X1"] <- coords[coords$id_tissue == el, "X1"] - x_1
+  coords[coords$id_tissue == el, "Y1"] <- coords[coords$id_tissue == el, "Y1"] - y_1
+}
+table(round(dist(coords[coords$id_tissue == "c26t16_1", c("X1", "Y1")])))
+
+
+
+sum(rho<100)
+min(rho)
+```
+
+
+
+# estraggo tabella precsione tessuto
+```{r}
+id_tissue.effect <- sapply(nb.multi.SPDE, function(x){
+  x$iperparam["Precision for id_tissue",]
+  }) %>% t()
+
+head(id_tissue.effect)
+
+```
+
+
+
+# indici tau e kappa per modello poisson
+```{r}
+
+load("modelli/p_model_completo.RData")
+
+spaziale.p <- sapply(p.multi.SPDE[names(sort(tot.expr)[1:100])], function(x){
+  x$iperparam
+  tau <- exp(x$iperparametri["Theta1 for w", "mean"])
+  kappa <-  exp(x$iperparametri["Theta2 for w", "mean"])
+  risp <- c(tau, kappa)
+  names(risp) <- c("tau", "kappa")
+  risp
+}) %>% t()
+
+tau_plot <- ggplot(data.frame(Value = spaziale[,1 ]), aes(x = Value)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  labs(x = "Value",
+       y = "Density") +
+  theme_minimal()
+
+# Grafico per kappa
+kappa_plot <- ggplot(data.frame(Value = spaziale[, 2]), aes(x = Value)) +
+  geom_density(fill = "red", alpha = 0.5) +
+  labs(x = "Value",
+       y = "Density") +
+  theme_minimal()
+
+```
+
+
+```{r}
+
+spaziale <- spaziale %>% as.data.frame()
+spaziale.p <- spaziale.p %>% as.data.frame()
+
+
+spaziale$Model = "NB"
+spaziale.p$Model <- "Poisson"
+
+tmp <- bind_rows(spaziale, spaziale.p)
+
+
+ggplot(tmp) +
+  geom_density(aes(x = tau, fill = Model), alpha = 0.5) +  # Imposta alpha per la trasparenza
+  scale_fill_manual(values = c("Poisson" = "#66B2FF", "NB" = "#003366")) +  # Azzurro e blu scuro
+  labs(x = "tau",
+       y = "Densità") +
+  theme_bw()  # Tema minimale per un aspetto pulito
+
+
+ggplot(tmp) +
+  geom_density(aes(x = kappa, fill = Model), alpha = 0.5) +  # Imposta alpha per la trasparenza
+  scale_fill_manual(values = c("Poisson" = "#FF9999", "NB" = "#CC0000")) +  # Rosso chiaro e rosso scuro
+  labs(x = "tau",
+       y = "Densità") +
+  theme_bw()  # Tema minimale per un aspetto pulito
+```
+
