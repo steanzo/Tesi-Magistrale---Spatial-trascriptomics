@@ -1,0 +1,390 @@
+---
+title: "Grafici GFP vs Espressione"
+output: html_document
+date: "2024-09-17"
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+library(dplyr)
+library(INLA)
+library(ggplot2)
+library(ggregplot)
+library(patchwork)
+load("dati/dati_finali.RData")
+```
+
+# Estrazione dati
+
+Carico i modelli ed estraggoi coefficienti stimati
+
+```{r}
+m <- c(21, 41, 61, 81, 101)
+n <- c(40, 60, 80, 100, 118)
+
+load("modelli/GFP e WGA/NB-SPDE comp geni 1-20.RData")
+
+ris <- lapply(prova.multi.BN.SPDE, function(x){
+  x$summary.fixed
+})
+
+for (el in 1:length(m)){
+  cat(sprintf("\r Esecuzione... %d - %d", m[el], n[el]))
+  load(paste0("modelli/GFP e WGA/NB-SPDE comp geni ",m[el],"-",n[el],".RData"))
+  tmp.ris <- lapply(prova.multi.BN.SPDE, function(x){
+    x$summary.fixed
+  })
+  ris <- c(ris, tmp.ris)
+}
+```
+
+# Ossero significatività logGFP
+
+Inizio ad osservare logGFP e individuo per quali geni vi è un effetto
+significativo osservando il segno dei quantili 0.025 e 0.975, se sono
+uguali allora considero l'effetto significativamente diverso da 0
+
+```{r}
+mtr.logGFP <- lapply(ris, function(x){
+  tmp <- x["logGFP",]
+  names(tmp) <- colnames(x)
+  tmp
+}) 
+mtr.logGFP <- as.data.frame(do.call(rbind, mtr.logGFP))
+mtr.logGFP$signif <- 0
+mtr.logGFP$signif[sign(mtr.logGFP$`0.025quant`) == sign(mtr.logGFP$`0.975quant`)] <- 1
+head(mtr.logGFP[,c(1,3,5,8)])
+```
+
+```{r}
+table(mtr.logGFP$signif)
+```
+
+Osservo grafici e guardo la significatività se reale o meno. Poichè ho
+118 geni decido di osservare la significatività e la correlazione. In
+pratica:
+
+-   stimo la correlazione
+
+-   osservo significatività e segno di correlazione
+
+-   faccio delle considerazioni osservando alcuni grafici
+
+Questa è la funzione per generare i grafici. Colori:
+
+-   nero: assenza di GFP o di gene
+
+-   giallo: valori massimi di GFP o gene
+
+```{r}
+g1 <- data %>% 
+  filter(img == "c26t16") %>%
+  ggplot() +
+  geom_point(aes(x = X1, y= -Y1, col= log(GFP_ch1_mean+1))) +
+  scale_color_gradientn('intensità',       # titolo della legenda
+                        colors = c("black", "red", "yellow"))
+g2 <- data %>% 
+  filter(img == "c26t17") %>%
+  ggplot() +
+  geom_point(aes(x = X1, y= -Y1, col= log(GFP_ch1_mean+1))) +
+  scale_color_gradientn('intensità',       # titolo della legenda
+                        colors = c("black", "red", "yellow"))
+
+g.logGFP <- g1 + ggtitle("GFP") + g2 
+list.grafici = list()
+plot.img.logGFP.vs.Gene <- function(gene){
+  segno <- sign(mtr.logGFP[gene, "mean"])
+
+  titolo <- paste0(gene, "- correlazione ",  segno)
+
+  titolo
+  g3 <- data %>%
+    filter(img == "c26t16") %>%
+    ggplot() +
+    geom_point(aes(x = X1, y = -Y1, col = data.gene[data$img == "c26t16", gene])) +
+    scale_color_gradientn('intensità',       # titolo della legenda
+                          colors = c("black", "red", "yellow"))  # scala di colori: nero -> rosso -> giallo
+  
+  g4 <- data %>%
+    filter(img == "c26t17") %>%
+    ggplot() +
+    geom_point(aes(x = X1, y= -Y1, col = (data.gene[data$img == "c26t17", gene]))) +
+    scale_color_gradientn('intensità',       # titolo della legenda
+                          colors = c("black", "red", "yellow"))
+ g.gene <- g3 + ggtitle("Espressione Gene") + g4 
+ 
+ print(g.logGFP/g.gene + plot_annotation(titolo))
+ #readline(prompt = "Premi Invio per vedere il prossimo grafico...")
+}
+
+data.gene
+```
+```{r}
+ggplot(data) + 
+  geom_density(aes(x = GFP_ch1_mean)) +
+  geom_vline(xintercept = 30, linetype="dashed",
+                color = "blue")
+```
+
+```{r}
+boxplot.gene <- function(risp){
+  tmp <- merge(data[,c("X", "GFP_ch1_mean", "id_tissue")], data.gene[,c("X", risp)], by = "X")
+  tmp$GFP = "basso"
+  tmp$GFP[tmp$GFP_ch1_mean>=30] <- "alto"
+  tmp$GFP_ch1_mean <- NULL
+  tmp$GFP <- as.factor(tmp$GFP)
+  colnames(tmp)[3] <- "risp"
+  
+  titolo <- paste("Gene:", risp)
+  
+  ggplot(tmp, aes(y = risp, x = id_tissue, fill = GFP)) +
+    geom_boxplot() + 
+    labs(title = titolo,x="Tessuto", y = "espressione genica")
+}
+```
+
+
+
+```{r}
+library(cowplot)
+
+legend <- get_legend(boxplot.gene("Cryab"))
+
+# Rimozione della legenda dai singoli grafici
+p1 <- boxplot.gene("Cryab") + theme(legend.position = "none")
+p2 <- boxplot.gene("Trim63") + theme(legend.position = "none")
+p3 <- boxplot.gene("Foxo1") + theme(legend.position = "none")
+p4 <- boxplot.gene("Foxo3") + theme(legend.position = "none")
+
+# Creazione di una griglia di grafici 2x2 senza legende
+plot_grid <- plot_grid(p1, p2, p3, p4, ncol = 2)
+
+# Aggiunta della legenda a lato della griglia
+final_plot <- plot_grid(plot_grid, legend, rel_widths = c(4, 1))
+
+# Visualizzazione del grafico finale
+print(final_plot)
+```
+
+
+Estraggo correlazioni tre GFP ed espressione dei diversi geni
+
+```{r}
+tmp <- cbind(data.gene[,rownames(mtr.logGFP)], log(data$GFP_ch1_mean+1))
+relazioni <- cor(tmp)[,119][-119]
+```
+
+```{r}
+confronto.cor.signif <- cbind(mtr.logGFP$signif, relazioni, sign(mtr.logGFP$mean)) %>% as.data.frame()
+colnames(confronto.cor.signif) <- c("signif", "corr", "segno")
+str(confronto.cor.signif)
+
+```
+
+#### Osservo significativi positivi
+
+```{r}
+sign.pos <- confronto.cor.signif %>% filter(signif == 1, segno == 1) 
+range(sign.pos$corr)
+hist(sign.pos$corr)
+```
+
+Questi sono i significativi positivi con maggiore correlazione (\>0.25)
+
+```{r}
+rownames(sign.pos)[which(sign.pos$corr>=0.2)]
+```
+
+```{r}
+plot.img.logGFP.vs.Gene("Cryab")
+boxplot.gene("Cryab")
+```
+
+Osservando `Cryab` possiamop notare come per 2 dei tessuti (seconda
+immagine) c'è una relazione positiva, alti valori GFP dove vi son oalti
+valori del gene. Nella prima immagine e secondo tessuto notiamo come li
+lievelli di espressioene sono bassi, ma i punti neri sono uguali a
+quelli del GFP. Primo tessuto sembra avere un effetto negativo solo per
+il lato destro che è rosso, mentre nel GFP è nero.
+
+
+```{r}
+plot.img.logGFP.vs.Gene("Eno3")
+boxplot.gene("Eno3")
+plot.img.logGFP.vs.Gene("Hspb8")
+boxplot.gene("Hspb8")
+```
+
+Osservazioni simili a quelle sopra
+
+Osserviamo ore quelli con correlazione bassa (\<0.15)
+
+```{r}
+rownames(sign.pos)[which(sign.pos$corr<0.15)]
+plot.img.logGFP.vs.Gene("Car3") # non molto chiaro
+boxplot.gene("Car3")
+
+```
+
+secondo tessuto prima immagine i punti neri coincidono con quelli del
+GFP, resto delle immagini poco chiare
+
+
+```{r}
+plot.img.logGFP.vs.Gene("Tpm2")
+boxplot.gene("Tpm2")
+plot.img.logGFP.vs.Gene("Myl1")
+boxplot.gene("Myl1")
+```
+
+Poco chiare le relazioni
+
+#### Osservo non significativi positivi
+
+```{r}
+no.sign.pos <- confronto.cor.signif %>% filter(signif == 0, segno == 1) 
+range(no.sign.pos$corr)
+hist(no.sign.pos$corr)
+```
+
+Quali geni hanno corr positiva ma non sono considerati segnali
+
+```{r}
+rownames(no.sign.pos)[which(no.sign.pos$corr>=0.2)]
+```
+
+```{r}
+plot.img.logGFP.vs.Gene("Slc25a4") # sembra esseci relazione positiva
+boxplot.gene("Slc25a4")
+```
+
+Per gli ultimi due tessutosi potrebbe ipotizzare relazione positiva, ma
+non molto chiaro
+
+
+
+
+```{r}
+plot.img.logGFP.vs.Gene("Des")
+boxplot.gene("Des")# sembra esseci relazione positiva
+```
+
+Come sopra
+
+#### osservo significativi negativi
+
+```{r}
+sign.neg <- confronto.cor.signif %>% filter(signif == 1, segno == -1) 
+sign.neg
+```
+
+#### osservo non significativi negitivi
+
+```{r}
+no.sign.neg <- confronto.cor.signif %>% filter(signif == 0, segno == -1) 
+range(no.sign.neg$corr)
+hist(no.sign.neg$corr)
+```
+
+quali geni hanno corr negitiva ma non sono considerati segnali
+
+```{r}
+rownames(no.sign.neg)[which(no.sign.neg$corr<=-0.1)]
+no.sign.neg$corr[no.sign.neg$corr<=-0.1]
+```
+
+# Provaiamo a giustificare alcuni casi:
+
+```{r}
+plot.img.logGFP.vs.Gene("Trim63")
+boxplot.gene("Trim63")
+```
+
+ha correlazione -0.24. ho correlazione negativa, ma bassa. possiamo
+giustificare la non sigificatività poichè solo per 3 tessuti si
+edivenzia una relazione negativa (anche se non su tutta l'are del
+tessuto)
+
+```{r}
+plot.img.logGFP.vs.Gene("Fbxo32")
+boxplot.gene("Fbxo32")
+plot.img.logGFP.vs.Gene("Serpina3n")
+boxplot.gene("Serpina3n")
+```
+
+#### Osserviamo FOxo1 e Foxo3
+
+```{r}
+plot.img.logGFP.vs.Gene("Foxo1")
+boxplot.gene("Foxo1")
+plot.img.logGFP.vs.Gene("Foxo3")
+boxplot.gene("Foxo3")
+
+```
+
+Non molto chiari anche se Foxo1 sembra avere relazione negativa
+
+#### Osservo differenza media coeff e correlazione
+
+```{r}
+diff.sign <- confronto.cor.signif %>% filter(!segno == sign(corr)) %>% arrange(corr)
+
+```
+
+2 esempi di correlazioni negative, ma il coefficiente stimato ha effetto
+positivo
+
+```{r}
+plot.img.logGFP.vs.Gene("Serpina3n")
+```
+
+per la prima, seconda (non molto) e quinto tessuto posso affermare
+relazione negativa
+
+```{r}
+plot.img.logGFP.vs.Gene("Retreg1")
+```
+
+non molto chiaro, ma ipotizzo relazioen negativa
+
+2 esempi di correlazioni positive, ma il coefficiente stimato ha effetto
+negativo
+
+```{r}
+plot.img.logGFP.vs.Gene("Mcl1")
+plot.img.logGFP.vs.Gene("Eef1a2")
+```
+
+non molto chiare 
+
+## Commento finale grafici 
+Osservando i grafici non siindividuano relazioni logGFP e espressione genica perfette. Nella maggior parte dei casi se utilizzassimo solo alcuni tessuti si osserverebbero delle relazioni certe
+
+
+```{r}
+vet_nomi <- c("Acta1", "Eno3", "Hspb8", "Car3", "Tpm2", "Myl1", "Slc25a4", "Des","Fbxo32", "Serpina3n")
+for(el in vet_nomi){
+  boxplot.gene(el) 
+  ggsave(paste0("img_tesi/Pre-processing/esplorativa/", el, " vs GFP.png"))
+}
+```
+
+
+
+
+# WGA - Gene
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+colMeans(data.gene[,-1]) %>% as.data.frame() %>%
+  ggplot() +
+  geom_density(aes(x = .))
+
+range(colMeans(data.gene[,-1]) %>% as.data.frame())
+summary(colMeans(data.gene[,-1]))
+
+```
